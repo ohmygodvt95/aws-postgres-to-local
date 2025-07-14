@@ -117,9 +117,7 @@ test_connection() {
     
     print_info "Testing connection to $connection_name..."
     
-    export PGPASSWORD="$password"
-    
-    if docker exec postgres-client psql -h "$host" -p "$port" -U "$username" -d "$database" -c "SELECT 1;" >/dev/null 2>&1; then
+    if docker exec -e PGPASSWORD="$password" postgres-client psql -h "$host" -p "$port" -U "$username" -d "$database" -c "SELECT 1;" >/dev/null 2>&1; then
         print_success "Connection to $connection_name successful"
         return 0
     else
