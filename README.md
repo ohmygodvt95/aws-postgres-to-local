@@ -166,7 +166,8 @@ PARALLEL_JOBS=4
 
 ## Backup File Formats
 
-- **Custom format** (`.dump`): Binary format, supports compression and parallel processing
+- **Directory format** (folder): Used for parallel processing (when PARALLEL_JOBS > 1)
+- **Custom format** (`.dump`): Binary format, supports compression (when PARALLEL_JOBS = 1)
 - **Plain format** (`.sql`): Text format, easy to read and edit
 
 ## Troubleshooting

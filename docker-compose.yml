@@ -5,13 +5,8 @@ services:
   postgres-client:
     image: postgres:${POSTGRES_VERSION:-15}
     container_name: postgres-client
+    network_mode: host
     volumes:
       - ./backup:/backup
       - ./.env:/app/.env
-    networks:
-      - postgres-network
     entrypoint: ["tail", "-f", "/dev/null"]  # Keep container running
-
-networks:
-  postgres-network:
-    driver: bridge

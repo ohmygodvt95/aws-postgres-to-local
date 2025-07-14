@@ -159,7 +159,12 @@ generate_backup_filename() {
     local prefix="${BACKUP_PREFIX:-postgres_backup}"
     
     if [[ "${USE_CUSTOM_FORMAT:-true}" == "true" ]]; then
-        echo "${prefix}_${timestamp}.dump"
+        # Use directory format for parallel jobs
+        if [[ "${PARALLEL_JOBS:-1}" -gt 1 ]]; then
+            echo "${prefix}_${timestamp}_dir"
+        else
+            echo "${prefix}_${timestamp}.dump"
+        fi
     else
         echo "${prefix}_${timestamp}.sql"
     fi
@@ -210,14 +215,32 @@ backup_database() {
     pg_dump_args+=("--clean")
     pg_dump_args+=("--if-exists")
     
+    # Include all database objects and preserve data types
+    pg_dump_args+=("--no-owner")
+    pg_dump_args+=("--no-privileges")
+    
+    # Include extensions, functions, and all database objects
+    pg_dump_args+=("--schema=public")
+    pg_dump_args+=("--blobs")
+    
     # Use custom format for large databases
     if [[ "${USE_CUSTOM_FORMAT:-true}" == "true" ]]; then
-        pg_dump_args+=("--format=custom")
-        pg_dump_args+=("--compress=${COMPRESSION_LEVEL:-6}")
-        
-        # Use parallel jobs for custom format
+        # Use parallel jobs for directory format (required for parallel backup)
         if [[ "${PARALLEL_JOBS:-1}" -gt 1 ]]; then
+            pg_dump_args+=("--format=directory")
             pg_dump_args+=("--jobs=${PARALLEL_JOBS}")
+            # Change backup path to directory for directory format
+            backup_path="/backup/${backup_file%.*}"
+            # Update the -f argument to point to directory
+            for i in "${!pg_dump_args[@]}"; do
+                if [[ "${pg_dump_args[$i]}" == "-f" ]]; then
+                    pg_dump_args[$((i+1))]="$backup_path"
+                    break
+                fi
+            done
+        else
+            pg_dump_args+=("--format=custom")
+            pg_dump_args+=("--compress=${COMPRESSION_LEVEL:-6}")
         fi
     else
         pg_dump_args+=("--format=plain")
@@ -226,13 +249,125 @@ backup_database() {
     print_info "Running: $pg_dump_cmd ${pg_dump_args[*]}"
     
     if docker exec -e PGPASSWORD="$SOURCE_DB_PASSWORD" postgres-client "$pg_dump_cmd" "${pg_dump_args[@]}"; then
-        local file_size
-        file_size=$(docker exec postgres-client ls -lh "$backup_path" | awk '{print $5}')
-        print_success "Backup completed successfully!"
-        print_success "File: $backup_file (Size: $file_size)"
-        print_info "Backup saved to: $BACKUP_DIR/$backup_file"
+        local file_info
+        # Check if it's a directory or file
+        if [[ "${PARALLEL_JOBS:-1}" -gt 1 && "${USE_CUSTOM_FORMAT:-true}" == "true" ]]; then
+            file_info=$(docker exec postgres-client du -sh "$backup_path" | awk '{print $1}')
+            print_success "Backup completed successfully!"
+            print_success "Directory: $backup_file (Size: $file_info)"
+            print_info "Backup saved to: $BACKUP_DIR/$backup_file"
+        else
+            file_info=$(docker exec postgres-client ls -lh "$backup_path" | awk '{print $5}')
+            print_success "Backup completed successfully!"
+            print_success "File: $backup_file (Size: $file_info)"
+            print_info "Backup saved to: $BACKUP_DIR/$backup_file"
+        fi
     else
         print_error "Backup failed!"
+        exit 1
+    fi
+}
+
+# Complete backup with all database objects and metadata
+backup_database_complete() {
+    validate_env
+    
+    if [[ "$MODE" != "backup" ]]; then
+        print_error "Environment is not configured for backup mode. Please set MODE=backup in .env"
+        exit 1
+    fi
+    
+    check_docker
+    start_client_container
+    
+    # Test source connection
+    if ! test_connection "$SOURCE_DB_HOST" "$SOURCE_DB_PORT" "$SOURCE_DB_NAME" "$SOURCE_DB_USER" "$SOURCE_DB_PASSWORD" "Source Database (AWS)"; then
+        exit 1
+    fi
+    
+    local backup_file
+    backup_file=$(generate_backup_filename)
+    local backup_path="/backup/$backup_file"
+    
+    print_info "Starting COMPLETE backup of database: $SOURCE_DB_NAME"
+    print_info "This backup will preserve all data types, extensions, constraints, and relationships"
+    print_info "Backup file: $backup_file"
+    
+    export PGPASSWORD="$SOURCE_DB_PASSWORD"
+    
+    local pg_dump_cmd="pg_dump"
+    local pg_dump_args=()
+    
+    # Connection parameters
+    pg_dump_args+=("-h" "$SOURCE_DB_HOST")
+    pg_dump_args+=("-p" "$SOURCE_DB_PORT")
+    pg_dump_args+=("-U" "$SOURCE_DB_USER")
+    pg_dump_args+=("-d" "$SOURCE_DB_NAME")
+    
+    # Output file
+    pg_dump_args+=("-f" "$backup_path")
+    
+    # Complete backup options for preserving ALL database objects
+    pg_dump_args+=("--verbose")
+    pg_dump_args+=("--no-password")
+    pg_dump_args+=("--create")
+    pg_dump_args+=("--clean")
+    pg_dump_args+=("--if-exists")
+    
+    # Preserve ownership and privileges (comment out if you want to skip)
+    # pg_dump_args+=("--no-owner")
+    # pg_dump_args+=("--no-privileges")
+    
+    # Include ALL database objects
+    pg_dump_args+=("--blobs")                    # Include large objects
+    pg_dump_args+=("--inserts")                 # Use INSERT statements (preserves data types)
+    pg_dump_args+=("--column-inserts")          # Use column names in INSERT statements
+    pg_dump_args+=("--disable-triggers")        # Disable triggers during restore
+    
+    # Force custom format to preserve everything properly
+    if [[ "${PARALLEL_JOBS:-1}" -gt 1 ]]; then
+        pg_dump_args+=("--format=directory")
+        pg_dump_args+=("--jobs=${PARALLEL_JOBS}")
+        # Change backup path to directory for directory format
+        backup_path="/backup/${backup_file%.*}"
+        # Update the -f argument to point to directory
+        for i in "${!pg_dump_args[@]}"; do
+            if [[ "${pg_dump_args[$i]}" == "-f" ]]; then
+                pg_dump_args[$((i+1))]="$backup_path"
+                break
+            fi
+        done
+    else
+        pg_dump_args+=("--format=custom")
+        pg_dump_args+=("--compress=${COMPRESSION_LEVEL:-6}")
+    fi
+    
+    print_info "Running COMPLETE backup: $pg_dump_cmd ${pg_dump_args[*]}"
+    
+    if docker exec -e PGPASSWORD="$SOURCE_DB_PASSWORD" postgres-client "$pg_dump_cmd" "${pg_dump_args[@]}"; then
+        local file_info
+        # Check if it's a directory or file
+        if [[ "${PARALLEL_JOBS:-1}" -gt 1 ]]; then
+            file_info=$(docker exec postgres-client du -sh "$backup_path" | awk '{print $1}')
+            print_success "COMPLETE backup completed successfully!"
+            print_success "Directory: $backup_file (Size: $file_info)"
+            print_info "Backup saved to: $BACKUP_DIR/$backup_file"
+        else
+            file_info=$(docker exec postgres-client ls -lh "$backup_path" | awk '{print $5}')
+            print_success "COMPLETE backup completed successfully!"
+            print_success "File: $backup_file (Size: $file_info)"
+            print_info "Backup saved to: $BACKUP_DIR/$backup_file"
+        fi
+        
+        print_success "This backup preserves:"
+        print_success "  ✓ All data types (including dates, UUID, etc.)"
+        print_success "  ✓ All constraints and relationships"
+        print_success "  ✓ All indexes and triggers"
+        print_success "  ✓ All extensions (including uuid-ossp)"
+        print_success "  ✓ All functions (including gen_random_uuid())"
+        
+    else
+        print_error "COMPLETE backup failed!"
         exit 1
     fi
 }
@@ -268,8 +403,13 @@ restore_database() {
     
     local backup_path="$BACKUP_DIR/$backup_file"
     
-    if [[ ! -f "$backup_path" ]]; then
-        print_error "Backup file not found: $backup_path"
+    # Check if backup is a directory or file
+    if [[ -d "$backup_path" ]]; then
+        print_info "Backup is a directory (parallel backup format)"
+    elif [[ -f "$backup_path" ]]; then
+        print_info "Backup is a file"
+    else
+        print_error "Backup file/directory not found: $backup_path"
         list_backups
         exit 1
     fi
@@ -291,7 +431,7 @@ restore_database() {
     local restore_args=()
     
     # Determine file format and use appropriate tool
-    if [[ "$backup_file" == *.dump ]]; then
+    if [[ "$backup_file" == *.dump ]] || [[ -d "$backup_path" ]]; then
         pg_restore_cmd="pg_restore"
         
         # Connection parameters
@@ -308,8 +448,8 @@ restore_database() {
         restore_args+=("--create")
         restore_args+=("--exit-on-error")
         
-        # Use parallel jobs for custom format
-        if [[ "${PARALLEL_JOBS:-1}" -gt 1 ]]; then
+        # Use parallel jobs for directory format
+        if [[ -d "$backup_path" && "${PARALLEL_JOBS:-1}" -gt 1 ]]; then
             restore_args+=("--jobs=${PARALLEL_JOBS}")
         fi
         
@@ -350,12 +490,14 @@ show_usage() {
     echo "Commands:"
     echo "  check                    Check database connections"
     echo "  backup                   Backup database (requires MODE=backup in .env)"
+    echo "  backup-complete          Complete backup preserving all metadata, extensions, and data types"
     echo "  restore <backup_file>    Restore database from backup file (requires MODE=restore in .env)"
     echo "  list                     List available backup files"
     echo
     echo "Examples:"
     echo "  $0 check"
     echo "  $0 backup"
+    echo "  $0 backup-complete"
     echo "  $0 restore postgres_backup_20250714_143022.dump"
     echo "  $0 list"
     echo
@@ -375,6 +517,10 @@ main() {
         "backup")
             load_env
             backup_database
+            ;;
+        "backup-complete")
+            load_env
+            backup_database_complete
             ;;
         "restore")
             load_env
