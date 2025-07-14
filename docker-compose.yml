@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Client container for running pg_dump/pg_restore
+  postgres-client:
+    image: postgres:${POSTGRES_VERSION:-15}
+    container_name: postgres-client
+    volumes:
+      - ./backup:/backup
+      - ./.env:/app/.env
+    networks:
+      - postgres-network
+    entrypoint: ["tail", "-f", "/dev/null"]  # Keep container running
+
+networks:
+  postgres-network:
+    driver: bridge
