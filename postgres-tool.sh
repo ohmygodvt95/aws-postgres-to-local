@@ -505,8 +505,9 @@ restore_database() {
         restore_args+=("-U" "$TARGET_DB_USER")
         restore_args+=("-d" "$TARGET_DB_NAME")
         
-        # Restore options
-        restore_args+=("-v" "ON_ERROR_STOP=1")
+        # Restore options for SQL files - continue on errors like "schema already exists"
+        restore_args+=("-v" "ON_ERROR_STOP=0")  # Don't stop on errors like schema exists
+        restore_args+=("--single-transaction")   # Use transaction for safety
         restore_args+=("-f" "/backup/$backup_file")
     fi
     

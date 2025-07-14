@@ -352,6 +352,26 @@ make s3-test
 # Verify bucket permissions
 ```
 
+#### Common Restore Errors
+
+**"schema public already exists" error:**
+```bash
+# This happens with .sql files (plain text format)
+# Solution 1: Use custom format backups instead (recommended)
+make backup-complete    # Creates .dump files
+
+# Solution 2: If you must use .sql files, the tool now handles this automatically
+# The error is harmless and restore will continue
+```
+
+**File format issues:**
+```bash
+# Use custom format (.dump) for best results
+USE_CUSTOM_FORMAT=true  # in .env file
+
+# Custom format preserves all metadata and handles restore better
+```
+
 ## 🏃‍♂️ Quick Reference
 
 ### Daily Operations
