@@ -71,8 +71,7 @@ test_s3_connection() {
 
 # Compress backup file or directory
 compress_backup() {
-    local backup_path="$1"
-    local backup_name="$2"
+    local backup_name="$1"
     local compressed_file="${backup_name}.tar.gz"
     
     print_info "Compressing backup: $backup_name"
@@ -80,9 +79,10 @@ compress_backup() {
     if [[ -d "$BACKUP_DIR/$backup_name" ]]; then
         # It's a directory (parallel backup)
         print_info "Compressing directory: $backup_name"
-        if docker exec postgres-client tar -czf "/backup/$compressed_file" -C "/backup" "$backup_name"; then
+        if docker exec postgres-client tar -czf "/backup/$compressed_file" -C "/backup" "$backup_name" >/dev/null 2>&1; then
             print_success "Directory compressed to: $compressed_file"
             echo "$compressed_file"
+            return 0
         else
             print_error "Failed to compress directory"
             return 1
@@ -90,15 +90,16 @@ compress_backup() {
     elif [[ -f "$BACKUP_DIR/$backup_name" ]]; then
         # It's a file
         print_info "Compressing file: $backup_name"
-        if docker exec postgres-client tar -czf "/backup/$compressed_file" -C "/backup" "$backup_name"; then
+        if docker exec postgres-client tar -czf "/backup/$compressed_file" -C "/backup" "$backup_name" >/dev/null 2>&1; then
             print_success "File compressed to: $compressed_file"
             echo "$compressed_file"
+            return 0
         else
             print_error "Failed to compress file"
             return 1
         fi
     else
-        print_error "Backup not found: $backup_path"
+        print_error "Backup not found: $BACKUP_DIR/$backup_name"
         return 1
     fi
 }
@@ -106,7 +107,8 @@ compress_backup() {
 # Upload to S3
 upload_to_s3() {
     local file_to_upload="$1"
-    local timestamp=$(date +"%Y%m%d_%H%M%S")
+    local timestamp
+    timestamp=$(date +"%Y%m%d_%H%M%S")
     local s3_key="${S3_BACKUP_PREFIX:-postgres-backups}/${timestamp}_${file_to_upload}"
     local local_path="/backup/$file_to_upload"
     
@@ -195,31 +197,59 @@ upload_single_backup() {
         return 1
     fi
     
+    # Check if backup file exists
+    if [[ ! -f "$BACKUP_DIR/$backup_file" ]] && [[ ! -d "$BACKUP_DIR/$backup_file" ]]; then
+        print_error "Backup file not found: $BACKUP_DIR/$backup_file"
+        return 1
+    fi
+    
     print_info "Uploading single backup: $backup_file"
     
-    # Compress the backup
-    local compressed_file
-    compressed_file=$(compress_backup "$BACKUP_DIR/$backup_file" "$backup_file")
+    # Create compressed filename
+    local compressed_file="${backup_file}.tar.gz"
     
-    if [[ $? -eq 0 ]] && [[ -n "$compressed_file" ]]; then
-        # Upload to S3
-        if upload_to_s3 "$compressed_file"; then
-            print_success "Single backup uploaded successfully"
-            
-            # Optionally delete local files
-            if [[ "${DELETE_LOCAL_AFTER_UPLOAD:-false}" == "true" ]]; then
-                print_info "Cleaning up local files..."
-                rm -f "$BACKUP_DIR/$backup_file"
-                rm -f "$BACKUP_DIR/$compressed_file"
-                print_success "Local cleanup completed"
-            fi
-            
-            return 0
+    # Compress the backup
+    print_info "Compressing backup: $backup_file"
+    if [[ -d "$BACKUP_DIR/$backup_file" ]]; then
+        # It's a directory
+        print_info "Compressing directory: $backup_file"
+        if docker exec postgres-client tar -czf "/backup/$compressed_file" -C "/backup" "$backup_file"; then
+            print_success "Directory compressed to: $compressed_file"
         else
+            print_error "Failed to compress directory"
             return 1
         fi
+    elif [[ -f "$BACKUP_DIR/$backup_file" ]]; then
+        # It's a file
+        print_info "Compressing file: $backup_file"
+        if docker exec postgres-client tar -czf "/backup/$compressed_file" -C "/backup" "$backup_file"; then
+            print_success "File compressed to: $compressed_file"
+        else
+            print_error "Failed to compress file"
+            return 1
+        fi
+    fi
+    
+    # Verify compressed file exists
+    if [[ ! -f "$BACKUP_DIR/$compressed_file" ]]; then
+        print_error "Compressed file not found: $BACKUP_DIR/$compressed_file"
+        return 1
+    fi
+    
+    # Upload to S3
+    if upload_to_s3 "$compressed_file"; then
+        print_success "Single backup uploaded successfully"
+        
+        # Optionally delete local files
+        if [[ "${DELETE_LOCAL_AFTER_UPLOAD:-false}" == "true" ]]; then
+            print_info "Cleaning up local files..."
+            rm -f "$BACKUP_DIR/$backup_file"
+            rm -f "$BACKUP_DIR/$compressed_file"
+            print_success "Local cleanup completed"
+        fi
+        
+        return 0
     else
-        print_error "Failed to compress backup"
         return 1
     fi
 }

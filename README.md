@@ -1,247 +1,378 @@
-# AWS PostgreSQL Backup/Restore Tool
+# 🚀 PostgreSQL Backup + S3 Auto Upload Tool
 
-A comprehensive tool for backing up and restoring PostgreSQL databases between AWS and local databases using Docker and pg_dump/pg_restore.
+**A complete solution for PostgreSQL backup with automatic upload to S3**
 
-## Features
+## ❌ Problems Solved:
 
-- ✅ Backup PostgreSQL database from AWS to SQL/dump files
-- ✅ Restore PostgreSQL database from backup files
-- ✅ Database connection health checks
-- ✅ Support for large databases with compression and parallel jobs
-- ✅ Docker containerization for consistent environments
-- ✅ Preserves table structure, relationships, constraints and data
-- ✅ Custom format support for memory optimization
-- ✅ Chunk processing for large databases
+* Date fields converted to TEXT instead of DATE/TIMESTAMP
+* Loss of `gen_random_uuid()` function and `uuid-ossp` extensions
+* Loss of constraints, relationships, and indexes
+* Backup files stored only locally, no cloud backup
 
-## System Requirements
+## ✅ Key Features
 
-- Docker and Docker Compose (v1 or v2)
-- Bash shell
-- Git (optional)
+### 🛡️ **Complete Database Backup**
 
-**Note:** Tool automatically detects and uses `docker compose` (v2) or `docker-compose` (v1)
+* ✅ Preserve all data types (DATE, TIMESTAMP, UUID, etc.)
+* ✅ Includes all extensions (uuid-ossp, etc.)
+* ✅ Preserves functions (gen\_random\_uuid(), etc.)
+* ✅ Preserves constraints, relationships, indexes
+* ✅ Backup globals (roles, tablespaces)
 
-## Quick Installation
+### ☁️ **S3 Integration**
+
+* ✅ Automatically compress backup files (.tar.gz)
+* ✅ Automatically upload to S3 after backup
+* ✅ Manage backups in the cloud
+* ✅ Download and restore from S3
+* ✅ Organized backup structure
+
+### 🎯 **Multiple Backup Strategies**
+
+* **Standard**: Basic backup in custom format
+* **Complete**: Backup with all metadata
+* **Advanced**: Separate backup (globals + schema + data + complete)
+
+## 🚀 Quick Start (Just 1 Command!)
 
 ```bash
 # Clone repository
 git clone <repository-url>
 cd aws-postgres-to-local
 
-# Automatic setup
+# Complete setup with just 1 command
 make setup
 
-# Or manual setup
-./setup.sh
+# Advanced backup (recommended)
+make backup-advanced
+
+# View S3 backups
+make s3-list
 ```
 
-## Configuration
+## 🔧 Configuration
 
-1. Copy `.env.example` to `.env`:
+### 1. Database Settings (Required)
+
+Edit the `.env` file:
+
 ```bash
-cp .env.example .env
-```
+# Operation Mode
+MODE=backup                    # or restore
 
-2. Edit `.env` file and configure:
-   - **MODE**: Choose `backup` or `restore` (cannot be both)
-   - **SOURCE_DB_***: Configure AWS PostgreSQL (for backup)
-   - **TARGET_DB_***: Configure target database (for restore)
-
-### Example configuration for backup:
-```bash
-MODE=backup
-SOURCE_DB_HOST=your-aws-postgres.amazonaws.com
+# Source Database (for backup)
+SOURCE_DB_HOST=your_aws_host
 SOURCE_DB_PORT=5432
-SOURCE_DB_NAME=production_db
+SOURCE_DB_NAME=your_database
 SOURCE_DB_USER=postgres
 SOURCE_DB_PASSWORD=your_password
-```
 
-### Example configuration for restore:
-```bash
-MODE=restore
+# Target Database (for restore)
 TARGET_DB_HOST=localhost
 TARGET_DB_PORT=5432
-TARGET_DB_NAME=local_db
+TARGET_DB_NAME=your_target_db
 TARGET_DB_USER=postgres
-TARGET_DB_PASSWORD=postgres
+TARGET_DB_PASSWORD=your_password
 ```
 
-## Usage
-
-### Using Makefile (Recommended)
+### 2. AWS S3 Settings (Required)
 
 ```bash
-# Check database connections
-make check
+# AWS Credentials
+AWS_ACCESS_KEY_ID=your_key
+AWS_SECRET_ACCESS_KEY=your_secret
+AWS_DEFAULT_REGION=ap-southeast-1
+AWS_BUCKET=your-bucket
 
-# Backup database
-make backup
+# S3 Auto Upload Settings
+AUTO_UPLOAD_S3=true                    # Auto-upload after backup
+S3_BACKUP_PREFIX=postgres-backups      # S3 folder
+DELETE_LOCAL_AFTER_UPLOAD=false        # Keep local files
+
+# Backup Settings
+USE_CUSTOM_FORMAT=true                 # Custom format (recommended)
+PARALLEL_JOBS=4                        # Parallel backup/restore
+COMPRESSION_LEVEL=6                    # Compression (0-9)
+```
+
+## 📋 Commands (Just 1 Command!)
+
+### 🎯 **Quick Commands**
+
+```bash
+make setup               # Setup environment + test connections
+make backup              # Standard backup + S3 upload
+make backup-complete     # Complete backup + S3 upload  
+make backup-advanced     # Advanced backup + S3 upload (recommended)
+make restore FILE=xxx    # Restore from backup file
+```
+
+### ☁️ **S3 Commands**
+
+```bash
+make s3-test             # Test S3 connection
+make s3-list             # List S3 backups
+make s3-upload FILE=xxx  # Upload backup to S3
+make s3-download FILE=xxx # Download backup from S3
+```
+
+### 🛠️ **Utility Commands**
+
+```bash
+make demo                # Show demo and features
+make clean               # Clean Docker containers
+```
+
+## 🔄 Workflows
+
+### 1. **Daily Backup Workflow**
+
+```bash
+# Just 1 command for daily backup!
+make backup-advanced
+
+# Result:
+# ✅ Complete database backup
+# ✅ Compressed to .tar.gz  
+# ✅ Uploaded to S3
+# ✅ Organized by timestamp
+```
+
+### 2. **Restore Workflow**
+
+```bash
+# View available backups
+make s3-list
+
+# Download backup from S3
+make s3-download FILE=postgres-backups/20250714_143022_backup.tar.gz
+
+# Switch to restore mode (edit .env: MODE=restore)
 
 # Restore database
-make restore FILE=postgres_backup_20250714_143022.dump
-
-# List backup files
-make list
+make restore FILE=backup_file.dump
 ```
 
-### Using Script Directly
+### 3. **Disaster Recovery**
 
 ```bash
-# Check database connections
+# All backups are on S3
+# Download any backup by timestamp
+# Full restore with all metadata
+```
+
+## 📁 File Structure
+
+### Local Backup Files
+
+```
+backup/
+├── postgres_backup_20250714_143022.dump              # Standard backup
+├── postgres_backup_20250714_143022_complete.dump     # Complete backup
+├── postgres_backup_20250714_143022_globals.sql       # Advanced: globals
+├── postgres_backup_20250714_143022_schema.dump       # Advanced: schema
+├── postgres_backup_20250714_143022_data.dump         # Advanced: data
+└── postgres_backup_20250714_143022_complete_set.tar.gz # Compressed for S3
+```
+
+### S3 Structure
+
+```
+s3://your-bucket/postgres-backups/
+├── 20250714_143022_postgres_backup_20250714_143022.dump.tar.gz
+├── 20250714_144500_postgres_backup_20250714_144500_complete_set.tar.gz
+└── 20250714_145000_postgres_backup_20250714_145000_complete.dump.tar.gz
+```
+
+## 🔍 Verification
+
+### After restore, check:
+
+```sql
+-- Check extensions
+SELECT extname FROM pg_extension;
+
+-- Check gen_random_uuid() function
+SELECT gen_random_uuid();
+
+-- Check data types
+\d your_table_name
+
+-- Check constraints
+SELECT conname, contype FROM pg_constraint 
+WHERE conrelid = 'your_table_name'::regclass;
+
+-- Verify date fields
+SELECT column_name, data_type 
+FROM information_schema.columns 
+WHERE table_name = 'your_table_name';
+```
+
+## 🎉 Benefits
+
+### ✅ **Data Integrity**
+
+* 100% preserves data types, constraints, relationships
+* No loss of extensions, functions, indexes
+* Perfect restore with full metadata
+
+### ☁️ **Cloud Backup**
+
+* Automatic S3 upload
+* Compressed storage (save costs)
+* Organized by timestamp
+* Easy download/restore
+
+### 🚀 **Automation**
+
+* One-command backup + upload
+* No manual steps required
+* Perfect for CI/CD pipelines
+* Disaster recovery ready
+
+### 💰 **Cost Effective**
+
+* S3 Standard-IA storage class
+* Compressed files save bandwidth
+* Pay only for what you use
+
+## 🚨 Important Notes
+
+1. **Always test restore** on a test database before production
+2. **Verify extensions** after restore
+3. **Check data types** to ensure no conversion
+4. **Monitor S3 costs** and set up lifecycle policies
+5. **Backup regularly** and test the restore process
+
+## 💡 Examples
+
+### Backup Examples
+
+```bash
+# Standard backup
+make backup
+
+# Complete backup (preserves everything)
+make backup-complete
+
+# Advanced backup (recommended - preserves all metadata)
+make backup-advanced
+```
+
+### Restore Examples
+
+```bash
+# List available backups
+make s3-list
+
+# Download and restore
+make s3-download FILE=postgres-backups/backup.tar.gz
+make restore FILE=postgres_backup_20250714_143022.dump
+```
+
+### S3 Management Examples
+
+```bash
+# Test S3 connection
+make s3-test
+
+# Upload existing backup
+make s3-upload FILE=my_backup.dump
+
+# List all S3 backups
+make s3-list
+```
+
+## 🏗️ Architecture
+
+```
+PostgreSQL Database
+        ↓
+   [Backup Process]
+        ↓
+  Local Backup Files
+        ↓
+   [Auto Compress]
+        ↓
+   [Auto Upload S3]
+        ↓
+   Cloud Storage ☁️
+```
+
+## 📞 Support & Troubleshooting
+
+### Common Commands
+
+* Demo features: `make demo`
+* Test connections: `make setup`
+* Clean environment: `make clean`
+
+### Manual Scripts (if needed)
+
+* `./postgres-tool.sh help` - Main tool help
+* `./advanced-backup.sh help` - Advanced backup help
+* `./s3-upload.sh help` - S3 operations help
+
+### System Requirements
+
+* Docker and Docker Compose
+* Bash shell
+* AWS CLI (containerized)
+
+### Troubleshooting
+
+#### Connection Issues
+
+```bash
+# Test all connections
+make setup
+
+# Check specific issues
 ./postgres-tool.sh check
-
-# Backup database
-./postgres-tool.sh backup
-
-# Restore database
-./postgres-tool.sh restore postgres_backup_20250714_143022.dump
-
-# List backup files
-./postgres-tool.sh list
+./postgres-tool.sh s3-test
 ```
 
-## Workflow
-
-### 1. Backup from AWS
+#### Permission Issues
 
 ```bash
-# 1. Configure for backup
-echo "MODE=backup" > .env
-# ... add SOURCE_DB_* information
+# Fix permissions
+chmod +x *.sh
 
-# 2. Check connections
-make check
-
-# 3. Perform backup
-make backup
+# Check Docker permissions
+docker ps
 ```
 
-### 2. Restore to Target Database
+#### S3 Issues
 
 ```bash
-# 1. Configure for restore
-echo "MODE=restore" > .env
-# ... add TARGET_DB_* information
+# Test S3 connection
+make s3-test
 
-# 2. Check connections
-make check
-
-# 3. Restore from backup file
-make restore FILE=postgres_backup_20250714_143022.dump
+# Check AWS credentials in .env
+# Verify bucket permissions
 ```
 
-## Optimization for Large Databases
+## 🏃‍♂️ Quick Reference
 
-The tool supports multiple optimization options:
+### Daily Operations
 
-- **Custom format**: Use PostgreSQL binary format
-- **Compression**: Compress backup files (level 0-9)
-- **Parallel jobs**: Use multiple threads
-- **Chunking**: Process data in chunks
-
-Configure in `.env`:
 ```bash
-USE_CUSTOM_FORMAT=true
-COMPRESSION_LEVEL=6
-PARALLEL_JOBS=4
+make backup-advanced     # Backup + upload to S3
+make s3-list            # Check backup status
 ```
 
-## File Structure
+### Recovery Operations
 
-```
-├── postgres-tool.sh      # Main script
-├── setup.sh             # Automatic setup script
-├── Makefile             # Makefile for easy usage
-├── docker-compose.yml   # Docker compose for pg_dump/pg_restore tools
-├── .env.example         # Configuration template
-├── .env                 # Actual configuration (gitignored)
-├── .gitignore          # Git ignore rules
-├── backup/             # Backup files directory (gitignored)
-│   └── .keep           # Keep directory in git
-├── LICENSE             # MIT License
-├── CODE_OF_CONDUCT.md  # Code of Conduct
-└── README.md           # This documentation
-```
-
-## Backup File Formats
-
-- **Directory format** (folder): Used for parallel processing (when PARALLEL_JOBS > 1)
-- **Custom format** (`.dump`): Binary format, supports compression (when PARALLEL_JOBS = 1)
-- **Plain format** (`.sql`): Text format, easy to read and edit
-
-## Troubleshooting
-
-### Connection Issues
 ```bash
-# Check connections
-make check
-
-# View Docker logs
-make logs
+make s3-download FILE=backup.tar.gz  # Download from S3
+make restore FILE=backup.dump        # Restore database
 ```
 
-### Permission Issues
+### Maintenance
+
 ```bash
-# Ensure scripts are executable
-chmod +x postgres-tool.sh setup.sh
+make clean              # Clean Docker environment
+make demo               # Show features
 ```
 
-### Database Does Not Exist
-Tool automatically creates database during restore when using `--create` option.
-
-### Large Backup Files
-Use custom format with compression:
-```bash
-USE_CUSTOM_FORMAT=true
-COMPRESSION_LEVEL=9
-PARALLEL_JOBS=8
-```
-
-### Docker Compose Compatibility
-Tool automatically detects and uses:
-- `docker compose` (Docker Compose v2) - preferred
-- `docker-compose` (Docker Compose v1) - fallback
-
-If encountering Docker Compose issues, check:
-```bash
-docker compose version  # v2
-docker-compose version  # v1
-```
-
-## Security Notes
-
-- `.env` file contains sensitive information and is gitignored
-- Do not commit passwords to source code
-- Use environment variables or secrets management in production
-
-## Contributing
-
-We welcome contributions! Please see our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing.
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Support
-
-If you encounter any issues or have questions:
-
-1. Check the [Troubleshooting](#troubleshooting) section
-2. Search existing [Issues](../../issues)
-3. Create a new issue if needed
-
-## Changelog
-
-### v1.0.0 (2025-07-14)
-- Initial release
-- AWS PostgreSQL backup/restore functionality
-- Docker Compose v1/v2 auto-detection
-- Support for large databases with parallel processing
-- Custom and plain backup formats
+**🎯 Now your PostgreSQL backup will be perfect, automated, and safe on the cloud with just 1 command!**
