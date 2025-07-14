@@ -122,6 +122,27 @@ advanced_backup() {
     print_success "  • ${backup_prefix}_${timestamp}_data.dump (data with preserved types)"
     print_success "  • ${backup_prefix}_${timestamp}_complete.dump (complete backup)"
     
+    # Auto upload to S3 if enabled
+    if [[ "${AUTO_UPLOAD_S3:-false}" == "true" ]]; then
+        print_info "AUTO_UPLOAD_S3 is enabled. Uploading to S3..."
+        
+        # Source the S3 upload script functions
+        if [[ -f "${SCRIPT_DIR}/s3-upload.sh" ]]; then
+            if "${SCRIPT_DIR}/s3-upload.sh" upload-advanced "$timestamp"; then
+                print_success "✅ Backup automatically uploaded to S3!"
+                if [[ "${DELETE_LOCAL_AFTER_UPLOAD:-false}" == "true" ]]; then
+                    print_success "✅ Local files cleaned up"
+                fi
+            else
+                print_warning "⚠ S3 upload failed, but backup files are saved locally"
+            fi
+        else
+            print_warning "⚠ S3 upload script not found, backup saved locally only"
+        fi
+    else
+        print_info "Auto S3 upload disabled. Set AUTO_UPLOAD_S3=true in .env to enable"
+    fi
+    
     print_info "To restore:"
     print_info "1. First restore globals: psql -f ${backup_prefix}_${timestamp}_globals.sql"
     print_info "2. Then restore schema: pg_restore ${backup_prefix}_${timestamp}_schema.dump"

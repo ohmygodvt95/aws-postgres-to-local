@@ -262,6 +262,26 @@ backup_database() {
             print_success "File: $backup_file (Size: $file_info)"
             print_info "Backup saved to: $BACKUP_DIR/$backup_file"
         fi
+        
+        # Auto upload to S3 if enabled
+        if [[ "${AUTO_UPLOAD_S3:-false}" == "true" ]]; then
+            print_info "AUTO_UPLOAD_S3 is enabled. Uploading to S3..."
+            
+            if [[ -f "${SCRIPT_DIR}/s3-upload.sh" ]]; then
+                if "${SCRIPT_DIR}/s3-upload.sh" upload "$backup_file"; then
+                    print_success "✅ Backup automatically uploaded to S3!"
+                    if [[ "${DELETE_LOCAL_AFTER_UPLOAD:-false}" == "true" ]]; then
+                        print_success "✅ Local files cleaned up"
+                    fi
+                else
+                    print_warning "⚠ S3 upload failed, but backup file is saved locally"
+                fi
+            else
+                print_warning "⚠ S3 upload script not found, backup saved locally only"
+            fi
+        else
+            print_info "Auto S3 upload disabled. Set AUTO_UPLOAD_S3=true in .env to enable"
+        fi
     else
         print_error "Backup failed!"
         exit 1
@@ -365,6 +385,26 @@ backup_database_complete() {
         print_success "  ✓ All indexes and triggers"
         print_success "  ✓ All extensions (including uuid-ossp)"
         print_success "  ✓ All functions (including gen_random_uuid())"
+        
+        # Auto upload to S3 if enabled
+        if [[ "${AUTO_UPLOAD_S3:-false}" == "true" ]]; then
+            print_info "AUTO_UPLOAD_S3 is enabled. Uploading to S3..."
+            
+            if [[ -f "${SCRIPT_DIR}/s3-upload.sh" ]]; then
+                if "${SCRIPT_DIR}/s3-upload.sh" upload "$backup_file"; then
+                    print_success "✅ Backup automatically uploaded to S3!"
+                    if [[ "${DELETE_LOCAL_AFTER_UPLOAD:-false}" == "true" ]]; then
+                        print_success "✅ Local files cleaned up"
+                    fi
+                else
+                    print_warning "⚠ S3 upload failed, but backup file is saved locally"
+                fi
+            else
+                print_warning "⚠ S3 upload script not found, backup saved locally only"
+            fi
+        else
+            print_info "Auto S3 upload disabled. Set AUTO_UPLOAD_S3=true in .env to enable"
+        fi
         
     else
         print_error "COMPLETE backup failed!"
@@ -493,6 +533,10 @@ show_usage() {
     echo "  backup-complete          Complete backup preserving all metadata, extensions, and data types"
     echo "  restore <backup_file>    Restore database from backup file (requires MODE=restore in .env)"
     echo "  list                     List available backup files"
+    echo "  s3-test                  Test S3 connection"
+    echo "  s3-upload <file>         Upload backup file to S3"
+    echo "  s3-list                  List S3 backups"
+    echo "  s3-download <s3_key>     Download backup from S3"
     echo
     echo "Examples:"
     echo "  $0 check"
@@ -500,6 +544,10 @@ show_usage() {
     echo "  $0 backup-complete"
     echo "  $0 restore postgres_backup_20250714_143022.dump"
     echo "  $0 list"
+    echo "  $0 s3-test"
+    echo "  $0 s3-upload postgres_backup_20250714_143022.dump"
+    echo "  $0 s3-list"
+    echo "  $0 s3-download postgres-backups/20250714_143022_backup.tar.gz"
     echo
     echo "Configuration:"
     echo "  Copy .env.example to .env and configure database connections"
@@ -528,6 +576,22 @@ main() {
             ;;
         "list")
             list_backups
+            ;;
+        "s3-test")
+            load_env
+            "${SCRIPT_DIR}/s3-upload.sh" test
+            ;;
+        "s3-upload")
+            load_env
+            "${SCRIPT_DIR}/s3-upload.sh" upload "${2:-}"
+            ;;
+        "s3-list")
+            load_env
+            "${SCRIPT_DIR}/s3-upload.sh" list
+            ;;
+        "s3-download")
+            load_env
+            "${SCRIPT_DIR}/s3-upload.sh" download "${2:-}"
             ;;
         "help"|"-h"|"--help"|"")
             show_usage

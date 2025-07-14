@@ -10,3 +10,16 @@ services:
       - ./backup:/backup
       - ./.env:/app/.env
     entrypoint: ["tail", "-f", "/dev/null"]  # Keep container running
+
+  # AWS CLI container for S3 operations
+  aws-cli:
+    image: amazon/aws-cli:latest
+    container_name: aws-cli
+    volumes:
+      - ./backup:/backup
+      - ./.env:/app/.env
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+    entrypoint: ["tail", "-f", "/dev/null"]  # Keep container running
